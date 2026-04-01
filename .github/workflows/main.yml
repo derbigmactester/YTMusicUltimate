@@ -1,21 +1,21 @@
-name: Build and Release YTMusicUltimate
+name: Build and Release YTMusicUltimate (Final Fixed)
 on:
   workflow_dispatch:
     inputs: 
       ipa_url:
-        description: "URL to the decrypted IPA file"
+        description: "Şifresi çözülmüş (Decrypted) IPA dosyasının direkt indirme linki"
         default: ""
         required: true
         type: string
 
       display_name:
-        description: "App Name (Optional)"
+        description: "Uygulama Adı (Opsiyonel)"
         default: "YouTube Music"
         required: true
         type: string
 
       bundle_id:
-        description: "BundleID (Optional)"
+        description: "BundleID (Giriş sorunu yaşamamak için orijinal id önerilir)"
         default: "com.google.ios.youtubemusic"
         required: true
         type: string
@@ -46,11 +46,9 @@ jobs:
       - name: Validate IPA URL
         run: |
           curl -L -r 0-1023 -o sample.part "${{ inputs.ipa_url }}" > /dev/null 2>&1
-          
           file_type=$(file --mime-type -b sample.part)
-
           if [[ "$file_type" != "application/x-ios-app" && "$file_type" != "application/zip" ]]; then
-            echo "::error::Validation failed: The file is not a valid IPA file. Detected type: $file_type."
+            echo "::error::Hata: Geçersiz IPA dosyası. Tespit edilen tip: $file_type."
             exit 1
           fi
 
@@ -90,20 +88,23 @@ jobs:
           git checkout
           mv *.sdk $THEOS/sdks
 
-      - name: Install cyan
+      - name: Install cyan (Pyzule)
         run: pipx install --force https://github.com/asdfzxcvbn/pyzule-rw/archive/main.zip
 
-      - name: Download YouTube Music
+      - name: Download YouTube Music IPA
         run: wget "${{ inputs.ipa_url }}" --no-verbose -O ytm.ipa
 
-      - name: Build Tweak for Sideloading
+      - name: Build Tweak for Sideloading (Rootless Mode)
         run: |
           cd main
-          make clean package DEBUG=0 FINALPACKAGE=1 SIDELOADING=1
-          mv packages/*.deb ../ytmult.deb
+          # Sideloading için rootless (arm64) şemasıyla derliyoruz
+          make clean package DEBUG=0 FINALPACKAGE=1 SIDELOADING=1 THEOS_PACKAGE_SCHEME=rootless
+          # Sadece arm64 olan deb dosyasını dışarı çıkarıyoruz
+          mv packages/*iphoneos-arm64.deb ../ytmult.deb
 
       - name: Inject tweak into provided IPA
-        run: cyan -i ytm.ipa -o YTMusicUltimate.ipa -u -w -n "${{ inputs.display_name }}" -b "${{ inputs.bundle_id }}" -f ytmult.deb
+        # -u: unrestrict, -w: weak-load, -l: substrate kütüphanesi, -e: entitlements yaması
+        run: cyan -i ytm.ipa -o YTMusicUltimate.ipa -uw -n "${{ inputs.display_name }}" -b "${{ inputs.bundle_id }}" -f ytmult.deb -l "CydiaSubstrate" -e
 
       - name: Create Release
         uses: softprops/action-gh-release@v2.5.0
@@ -114,4 +115,4 @@ jobs:
 
       - name: Output Release URL
         run: |
-          echo "::notice::Release available at: https://github.com/${{ github.repository }}/releases"
+          echo "::notice::İşlem başarılı! IPA Dosyası burada: https://github.com/${{ github.repository }}/releases"
